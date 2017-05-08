@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/tarsum"
+	"github.com/docker/docker/pkg/pools"
 	"path/filepath"
 	"crypto/sha256"
 	"hash"
@@ -17,20 +18,26 @@ import (
 func main() {
 	relPath := os.Args[1]
 
-	fmt.Printf("Path (relative to dockerfile): %s\n", relPath)
+	path, err := filepath.Abs(relPath)
+	errorOut(err)
 
-	path, _ := filepath.Abs(relPath)
+	fi, err := os.Lstat(path)
+	errorOut(err)
 
-	fi, _ := os.Lstat(path)
-
-	h, _ := archive.FileInfoHeader(path, relPath, fi)
+	h, err := archive.FileInfoHeader(path, relPath, fi)
+	errorOut(err)
 
 	tsh := &tarsumHash{hdr: h, Hash: sha256.New()}
 	tsh.Reset()
 
-	tarsum.WriteV1Header(tsh.hdr, tsh.Hash)
-
-	fmt.Printf("Hash: %s\n", hex.EncodeToString(tsh.Hash.Sum(nil)))
+	if fi.Mode().IsRegular() && fi.Size() > 0 {
+		f, err := os.Open(path)
+		errorOut(err)
+		defer f.Close()
+		if _, err := pools.Copy(tsh, f); err != nil {
+			errorOut(err)
+		}
+	}
 
 	orderedHeaders := [][2]string{
 		{"name", h.Name},
@@ -51,9 +58,17 @@ func main() {
 	headers = append(headers, orderedHeaders[0:5]...)
 	headers = append(headers, orderedHeaders[6:]...)
 
+	fmt.Printf("Name: %s\n", relPath)
+	fmt.Printf("Hash: %s\n", hex.EncodeToString(tsh.Hash.Sum(nil)))
 	fmt.Printf("Hdrs: %s\n", headers)
 }
 
+func errorOut(err error) {
+	if err != nil {
+		fmt.Printf("ERROR: %s\n", err)
+		os.Exit(1)
+	}
+}
 
 type tarsumHash struct {
 	hash.Hash

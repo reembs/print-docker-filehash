@@ -4,6 +4,7 @@ VOLUME /go/result
 
 RUN go get github.com/docker/docker/pkg/tarsum
 RUN go get github.com/docker/docker/pkg/archive
+RUN go get github.com/docker/docker/pkg/pools
 
 COPY main.go /go
 
